@@ -2,11 +2,10 @@ from graph.state import GraphState, SubSection
 
 
 def assembler_node(state: GraphState) -> dict:
-    """Assembles all written sections into a single formatted Markdown document."""
+    """Assembles written sections into Markdown, generates PDF, and emails the book."""
     written: list[SubSection] = state["written_sections"]
     outline = state["book_outline"]
 
-    # Sort by chapter_index then section_index then subsection order (id sorts lexicographically)
     written_sorted = sorted(written, key=lambda s: s["id"])
 
     lines: list[str] = []
@@ -38,7 +37,22 @@ def assembler_node(state: GraphState) -> dict:
 
     final_book = "\n".join(lines)
 
+    # Generate PDF and send email (both non-fatal on failure)
+    email_sent = False
+    user_email = state.get("user_email", "")
+
+    if user_email:
+        from graph.pdf import markdown_to_pdf
+        from graph.mailer import send_book_email
+        try:
+            pdf_bytes = markdown_to_pdf(final_book, outline["title"])
+            email_sent = send_book_email(user_email, outline["title"], final_book, pdf_bytes)
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).exception("PDF/email step failed: %s", exc)
+
     return {
         "final_book": final_book,
         "status": "done",
+        "email_sent": email_sent,
     }

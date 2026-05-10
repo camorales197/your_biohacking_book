@@ -26,6 +26,7 @@ SAMPLE_PROFILE = UserProfile(
 )
 
 INITIAL_STATE = GraphState(
+    user_email="test@example.com",
     user_profile=SAMPLE_PROFILE,
     book_outline=None,
     sections_to_write=[],
@@ -33,6 +34,7 @@ INITIAL_STATE = GraphState(
     final_book=None,
     user_feedback=None,
     status="outlining",
+    email_sent=False,
 )
 
 

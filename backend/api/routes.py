@@ -2,8 +2,9 @@ import uuid
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import Response
 from langgraph.types import Command
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 
 from graph.state import UserProfile, GraphState
 from graph.graph import get_graph
@@ -14,6 +15,7 @@ router = APIRouter(prefix="/api")
 # ── Request / Response schemas ────────────────────────────────────────────────
 
 class GenerateRequest(BaseModel):
+    email: EmailStr
     age: int
     sex: str
     location: str
@@ -33,6 +35,7 @@ class StatusResponse(BaseModel):
     outline: Optional[dict] = None
     sections_count: Optional[int] = None
     written_count: Optional[int] = None
+    email_sent: Optional[bool] = None
 
 
 class ApproveRequest(BaseModel):
@@ -44,6 +47,7 @@ class BookResponse(BaseModel):
     thread_id: str
     title: str
     content: str
+    email_sent: bool
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -71,6 +75,7 @@ async def generate_book(req: GenerateRequest):
     )
 
     initial_state = GraphState(
+        user_email=str(req.email),
         user_profile=profile,
         book_outline=None,
         sections_to_write=[],
@@ -78,10 +83,10 @@ async def generate_book(req: GenerateRequest):
         final_book=None,
         user_feedback=None,
         status="outlining",
+        email_sent=False,
     )
 
     graph = get_graph()
-    # Runs until hitl_node's interrupt() — architect completes and outline is in state
     await graph.ainvoke(initial_state, config=config)
 
     return GenerateResponse(thread_id=thread_id, status="awaiting_approval")
@@ -103,6 +108,7 @@ async def get_status(thread_id: str):
         outline=state.get("book_outline"),
         sections_count=len(state.get("sections_to_write", [])),
         written_count=len(state.get("written_sections", [])),
+        email_sent=state.get("email_sent"),
     )
 
 
@@ -116,7 +122,6 @@ async def approve_outline(thread_id: str, req: ApproveRequest):
     if not snapshot or not snapshot.values:
         raise HTTPException(status_code=404, detail="Thread not found")
 
-    # Resume the interrupt with the user's decision via Command(resume=...)
     resume_value = {"approved": req.approved, "feedback": req.feedback or ""}
     await graph.ainvoke(Command(resume=resume_value), config=config)
 
@@ -126,7 +131,7 @@ async def approve_outline(thread_id: str, req: ApproveRequest):
 
 @router.get("/book/{thread_id}", response_model=BookResponse)
 async def get_book(thread_id: str):
-    """Returns the final assembled book once generation is complete."""
+    """Returns the final assembled book Markdown once generation is complete."""
     graph = get_graph()
     snapshot = graph.get_state(_get_thread_config(thread_id))
 
@@ -143,4 +148,32 @@ async def get_book(thread_id: str):
         thread_id=thread_id,
         title=outline.get("title", "Tu Libro de Biohacking"),
         content=state.get("final_book", ""),
+        email_sent=state.get("email_sent", False),
+    )
+
+
+@router.get("/book/{thread_id}/pdf")
+async def get_book_pdf(thread_id: str):
+    """Returns the final book as a downloadable PDF."""
+    graph = get_graph()
+    snapshot = graph.get_state(_get_thread_config(thread_id))
+
+    if not snapshot or not snapshot.values:
+        raise HTTPException(status_code=404, detail="Thread not found")
+
+    state: GraphState = snapshot.values
+
+    if state.get("status") != "done":
+        raise HTTPException(status_code=202, detail="Book not ready yet")
+
+    from graph.pdf import markdown_to_pdf
+    outline = state.get("book_outline") or {}
+    title = outline.get("title", "Tu Libro de Biohacking")
+    pdf_bytes = markdown_to_pdf(state.get("final_book", ""), title)
+
+    safe_filename = title[:50].replace(" ", "_").replace("/", "-") + ".pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{safe_filename}"'},
     )

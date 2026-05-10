@@ -2,9 +2,11 @@
 
 ## Architecture
 - **Frontend**: Next.js 15 + TypeScript + CopilotKit → deploy Vercel
-- **Backend**: FastAPI + LangGraph 1.1.10 + LangChain → deploy Render
-- **LLMs**: Gemini 2.0 Flash (Architect) + Claude Haiku 4.5 (Writers) via OpenRouter
+- **Backend**: FastAPI + LangGraph 1.1.10 + LangChain → deploy Render (managed with **uv**)
+- **LLMs**: Claude Opus 4.7 (Architect) + Claude Sonnet 4.6 (Writers) via OpenRouter
 - **Persistence**: MemorySaver (tests) / SqliteSaver (production)
+- **PDF**: WeasyPrint (Markdown → styled PDF)
+- **Email**: Resend SDK (book delivered as PDF + MD attachment)
 
 ---
 

@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 export interface UserFormData {
+  email: string;
   age: number;
   sex: string;
   location: string;
@@ -18,6 +19,7 @@ interface Props {
 }
 
 export default function UserInputForm({ onSubmit, loading }: Props) {
+  const [email, setEmail] = useState("");
   const [age, setAge] = useState<number | "">("");
   const [sex, setSex] = useState("");
   const [location, setLocation] = useState("");
@@ -28,9 +30,10 @@ export default function UserInputForm({ onSubmit, loading }: Props) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!age || !sex || !location || !lifestyle || !goals) return;
+    if (!email || !age || !sex || !location || !lifestyle || !goals) return;
 
     onSubmit({
+      email,
       age: Number(age),
       sex,
       location,
@@ -59,6 +62,23 @@ export default function UserInputForm({ onSubmit, loading }: Props) {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-5">
+        <div className="p-4 bg-green-50 dark:bg-green-900/20 rounded-xl border border-green-200 dark:border-green-800">
+          <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">
+            📧 Tu correo electrónico *
+          </label>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            required
+            className="w-full px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-green-500"
+            placeholder="tu@email.com"
+          />
+          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+            Te enviaremos el libro generado en PDF y Markdown cuando esté listo.
+          </p>
+        </div>
+
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1">

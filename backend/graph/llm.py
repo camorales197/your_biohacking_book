@@ -3,9 +3,9 @@ from langchain_core.language_models import BaseChatModel
 
 
 def get_architect_llm() -> BaseChatModel:
-    """Returns the LLM for the Architect agent (Gemini 2.0 Flash via OpenRouter)."""
+    """Returns the LLM for the Architect agent (Claude Opus 4.7 via OpenRouter)."""
     api_key = os.getenv("OPENROUTER_API_KEY", "")
-    model = os.getenv("ARCHITECT_MODEL", "google/gemini-2.0-flash-001")
+    model = os.getenv("ARCHITECT_MODEL", "anthropic/claude-opus-4-7")
 
     if not api_key or api_key == "mock":
         return _get_fake_llm("architect")
@@ -15,9 +15,9 @@ def get_architect_llm() -> BaseChatModel:
 
 
 def get_writer_llm() -> BaseChatModel:
-    """Returns the LLM for Writer agents (Claude Haiku 4.5 via OpenRouter)."""
+    """Returns the LLM for Writer agents (Claude Sonnet 4.6 via OpenRouter)."""
     api_key = os.getenv("OPENROUTER_API_KEY", "")
-    model = os.getenv("WRITER_MODEL", "anthropic/claude-haiku-4-5")
+    model = os.getenv("WRITER_MODEL", "anthropic/claude-sonnet-4-6")
 
     if not api_key or api_key == "mock":
         return _get_fake_llm("writer")

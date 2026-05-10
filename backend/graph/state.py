@@ -31,6 +31,7 @@ class BookOutline(TypedDict):
 
 
 class GraphState(TypedDict):
+    user_email: str
     user_profile: UserProfile
     book_outline: Optional[BookOutline]
     sections_to_write: list[SubSection]
@@ -39,6 +40,7 @@ class GraphState(TypedDict):
     final_book: Optional[str]
     user_feedback: Optional[str]
     status: str  # "outlining" | "awaiting_approval" | "writing" | "done"
+    email_sent: bool
 
 
 class WriterInput(TypedDict):

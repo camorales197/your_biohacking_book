@@ -8,10 +8,14 @@ services:
     envVars:
       - key: OPENROUTER_API_KEY
         sync: false  # Set manually in Render dashboard
+      - key: RESEND_API_KEY
+        sync: false  # Set manually in Render dashboard
+      - key: EMAIL_FROM
+        value: onboarding@resend.dev  # Change to your verified domain in production
       - key: ARCHITECT_MODEL
-        value: google/gemini-2.0-flash-001
+        value: anthropic/claude-opus-4-7
       - key: WRITER_MODEL
-        value: anthropic/claude-haiku-4-5
+        value: anthropic/claude-sonnet-4-6
       - key: CORS_ORIGINS
         value: https://your-app.vercel.app  # Update with your Vercel URL
       - key: CHECKPOINT_DB_PATH

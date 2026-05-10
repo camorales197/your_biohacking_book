@@ -29,6 +29,7 @@ interface StatusPayload {
   };
   sections_count?: number;
   written_count?: number;
+  email_sent?: boolean;
 }
 
 export default function Home() {
@@ -37,6 +38,8 @@ export default function Home() {
   const [statusData, setStatusData] = useState<StatusPayload | null>(null);
   const [bookTitle, setBookTitle] = useState("");
   const [bookContent, setBookContent] = useState("");
+  const [bookEmailSent, setBookEmailSent] = useState(false);
+  const [userEmail, setUserEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -63,6 +66,7 @@ export default function Home() {
           const book = await bookRes.json();
           setBookTitle(book.title);
           setBookContent(book.content);
+          setBookEmailSent(book.email_sent ?? false);
           setStep("done");
         }
       }
@@ -75,6 +79,7 @@ export default function Home() {
   const handleFormSubmit = async (data: UserFormData) => {
     setLoading(true);
     setError(null);
+    setUserEmail(data.email);
     try {
       const res = await fetch(`${BACKEND_URL}/api/generate`, {
         method: "POST",
@@ -161,6 +166,8 @@ export default function Home() {
     setStatusData(null);
     setBookTitle("");
     setBookContent("");
+    setBookEmailSent(false);
+    setUserEmail("");
     setError(null);
   };
 
@@ -201,8 +208,11 @@ export default function Home() {
 
           {step === "done" && (
             <BookDisplay
+              threadId={threadId!}
               title={bookTitle}
               content={bookContent}
+              emailSent={bookEmailSent}
+              userEmail={userEmail}
               onReset={handleReset}
             />
           )}

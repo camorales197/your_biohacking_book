@@ -1,0 +1,32 @@
+[project]
+name = "biohacking-book-backend"
+version = "0.1.0"
+description = "Multiagent biohacking book generator - FastAPI + LangGraph backend"
+requires-python = ">=3.11"
+dependencies = [
+    "langgraph>=1.1.10",
+    "langchain>=1.2.18",
+    "langchain-openrouter>=0.2.3",
+    "langchain-community>=0.4.1",
+    "fastapi>=0.136.1",
+    "uvicorn[standard]>=0.46.0",
+    "pydantic[email]>=2.13.4",
+    "python-dotenv>=1.2.2",
+    "copilotkit>=0.1.88",
+    "httpx>=0.28.1",
+    "weasyprint>=62.3",
+    "markdown>=3.7",
+    "resend>=2.5.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]

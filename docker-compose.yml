@@ -5,8 +5,10 @@ services:
       - "8000:8000"
     environment:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
-      - ARCHITECT_MODEL=${ARCHITECT_MODEL:-google/gemini-2.0-flash-001}
-      - WRITER_MODEL=${WRITER_MODEL:-anthropic/claude-haiku-4-5}
+      - RESEND_API_KEY=${RESEND_API_KEY}
+      - EMAIL_FROM=${EMAIL_FROM:-onboarding@resend.dev}
+      - ARCHITECT_MODEL=${ARCHITECT_MODEL:-anthropic/claude-opus-4-7}
+      - WRITER_MODEL=${WRITER_MODEL:-anthropic/claude-sonnet-4-6}
       - CORS_ORIGINS=http://localhost:3000
       - CHECKPOINT_DB_PATH=/data/checkpoints.db
     volumes:
