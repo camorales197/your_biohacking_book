@@ -1,0 +1,29 @@
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - ARCHITECT_MODEL=${ARCHITECT_MODEL:-google/gemini-2.0-flash-001}
+      - WRITER_MODEL=${WRITER_MODEL:-anthropic/claude-haiku-4-5}
+      - CORS_ORIGINS=http://localhost:3000
+      - CHECKPOINT_DB_PATH=/data/checkpoints.db
+    volumes:
+      - checkpoint_data:/data
+
+  frontend:
+    image: node:22-alpine
+    working_dir: /app
+    command: sh -c "npm install && npm run dev"
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
+    volumes:
+      - ./frontend:/app
+    depends_on:
+      - backend
+
+volumes:
+  checkpoint_data:

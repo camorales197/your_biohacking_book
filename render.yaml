@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: biohacking-book-backend
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    plan: free
+    envVars:
+      - key: OPENROUTER_API_KEY
+        sync: false  # Set manually in Render dashboard
+      - key: ARCHITECT_MODEL
+        value: google/gemini-2.0-flash-001
+      - key: WRITER_MODEL
+        value: anthropic/claude-haiku-4-5
+      - key: CORS_ORIGINS
+        value: https://your-app.vercel.app  # Update with your Vercel URL
+      - key: CHECKPOINT_DB_PATH
+        value: /data/checkpoints.db
+    disk:
+      name: checkpoint-data
+      mountPath: /data
+      sizeGB: 1
