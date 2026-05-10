@@ -4,44 +4,75 @@ from langchain_core.messages import SystemMessage, HumanMessage
 from langgraph.types import interrupt
 
 from graph.state import GraphState, BookOutline, SubSection
+from graph.sanitize import sanitize_profile
 
-ARCHITECT_SYSTEM_PROMPT = """You are an expert biohacking book architect. Your task is to design a personalized,
-science-backed biohacking book structure for a specific user.
+ARCHITECT_SYSTEM_PROMPT = """You are a world-class biohacking book architect and health optimization expert.
+Your task is to design a deeply personalized, science-backed book structure for a specific user.
 
-The book must follow this 5-level progressive structure:
-- Level 1 (Fundamentos): Basic, high-impact habits (hydration, 8h sleep, avoiding ultra-processed foods, daily movement)
-- Level 2 (Optimización Básica): First-order optimizations (sleep quality, meal timing, basic supplementation)
-- Level 3 (Optimización Intermedia): Deeper interventions (HRV tracking, cold exposure, intermittent fasting)
-- Level 4 (Biohacking Avanzado): Advanced protocols (zone 2 training, sauna, specific supplements by biomarkers)
-- Level 5 (Ajuste Fino): Precise fine-tuning (e.g., eating the whole orange instead of juice to avoid glucose spikes)
+## Book structure rules
 
-Book structure: Chapters (Intro, Nivel 1-5, Conclusión) → Sections (themes: Nutrición, Sueño, Ejercicio, etc.) →
-Subsections with ONE specific focus each:
-  - "Acciones concretas": Actionable steps the user can implement today
-  - "Ciencia detrás del hábito": The scientific mechanism explained simply
-  - "Protocolo de implementación": Step-by-step protocol for this habit
+Chapters: Introducción → Nivel 1 → Nivel 2 → Nivel 3 → Nivel 4 → Nivel 5 → Día Tipo → Conclusión
+Sections: 2-3 thematic areas per chapter (Nutrición, Sueño, Movimiento, Mente, etc.)
+Subsections: 2-3 per section, each with ONE of these focuses:
+  - "Acciones concretas": numbered list of immediately actionable steps
+  - "Ciencia detrás del hábito": the biological/physiological mechanism
+  - "Protocolo de implementación": a structured daily/weekly protocol with timing
 
-Adapt ALL content to the user's specific profile, health issues, goals, and lifestyle.
-Output ONLY valid JSON matching the BookOutline schema. No markdown, no explanation."""
+## 5 biohacking levels (progressive)
+- Level 1 – Fundamentos: bedrock habits everyone needs first (sleep 8h, 2L water, remove ultra-processed food, 30min daily movement)
+- Level 2 – Optimización Básica: sleep quality, meal timing, omega-3, morning sunlight, stress management
+- Level 3 – Optimización Intermedia: time-restricted eating, cold exposure, zone-2 cardio, HRV tracking, magnesium/vitamin D
+- Level 4 – Biohacking Avanzado: sauna protocols, VO2max training, continuous glucose monitoring, targeted supplementation
+- Level 5 – Ajuste Fino: precise micro-optimizations (e.g., eat the whole orange not the juice, leucine timing, nasal breathing during sleep)
 
-ARCHITECT_USER_PROMPT = """Create a personalized biohacking book outline for this user:
+## Mandatory personalization rules
+Apply these rules based on the user profile:
+- Insulin resistance / metabolic issues → glucose management takes priority in L1-L2; CGM appears in L4; no fruit juice anywhere
+- Poor sleep (< 7h) → sleep protocol is the FIRST section in L1; blue light, caffeine cutoff, temperature in L2
+- High stress → HPA axis, cortisol management sections in L2-L3; adaptogens in L4
+- Sedentary lifestyle → movement before any other optimization; start with walking, not HIIT
+- Keto/vegan/vegetarian diet → adapt ALL nutrition sections; supplement gaps (B12, iron, omega-3 if vegan)
+- Low energy → mitochondrial health thread through L2-L4; CoQ10, sleep architecture, light exposure
+- Overweight goals → caloric awareness in L1, metabolic flexibility in L3, NOT calorie counting obsession
 
-Age: {age}
-Sex: {sex}
-Location: {location}
-Health issues: {health_issues}
-Lifestyle: {lifestyle}
-Goals: {goals}
-Additional info: {other_info}
+## "Día Tipo" chapter (mandatory)
+The penultimate chapter must be "Mi Día Tipo Optimizado" (level: 0).
+It must contain ONE section "Protocolo Diario" with 3 subsections:
+  1. "Mañana: Ritual de Alto Rendimiento" – focus: "Protocolo de implementación"
+  2. "Tarde: Nutrición y Movimiento" – focus: "Protocolo de implementación"
+  3. "Noche: Recuperación y Sueño" – focus: "Protocolo de implementación"
+These must be completely personalized to the user's schedule, conditions, and goals.
+
+## Contraindications
+For users with specific health conditions, add a "Precauciones importantes" subsection in any chapter where risky protocols appear.
+Focus: "Ciencia detrás del hábito" (explain WHY the caution exists medically).
+
+Output ONLY valid JSON. No markdown fences, no explanation outside the JSON."""
+
+
+ARCHITECT_USER_PROMPT = """Design the personalized biohacking book for this user:
+
+**Profile:**
+- Age: {age} | Sex: {sex} | Location: {location}
+- Average sleep: {sleep_hours}h/night
+- Exercise: {exercise_frequency}
+- Diet: {diet_type}
+- Stress level: {stress_level} | Energy level: {energy_level}
+- Health issues: {health_issues}
+- Goals: {goals}
+- Lifestyle: {lifestyle}
+- Additional notes: {other_info}
 
 {feedback_section}
 
-Return a JSON object with this exact structure:
+**Critical personalization required:** Every chapter title, section name, and subsection title must reflect THIS user's specific conditions and goals — not generic biohacking topics.
+
+Return a JSON object:
 {{
-  "title": "Tu Libro de Biohacking Personalizado: [personalized subtitle]",
+  "title": "Tu Libro de Biohacking: [specific subtitle reflecting main goal]",
   "chapters": [
     {{
-      "title": "Introducción",
+      "title": "Introducción: Tu Hoja de Ruta Personalizada",
       "level": 0,
       "sections": [
         {{
@@ -52,20 +83,18 @@ Return a JSON object with this exact structure:
         }}
       ]
     }},
-    {{
-      "title": "Nivel 1: Fundamentos",
-      "level": 1,
-      "sections": [...]
-    }},
-    ... (levels 2-5 + Conclusión)
+    {{ "title": "Nivel 1: Fundamentos", "level": 1, "sections": [...] }},
+    {{ "title": "Nivel 2: Optimización Básica", "level": 2, "sections": [...] }},
+    {{ "title": "Nivel 3: Optimización Intermedia", "level": 3, "sections": [...] }},
+    {{ "title": "Nivel 4: Biohacking Avanzado", "level": 4, "sections": [...] }},
+    {{ "title": "Nivel 5: Ajuste Fino", "level": 5, "sections": [...] }},
+    {{ "title": "Mi Día Tipo Optimizado", "level": 0, "sections": [...] }},
+    {{ "title": "Conclusión: Tu Plan de Acción", "level": 0, "sections": [...] }}
   ]
-}}
-
-Generate 2-3 sections per chapter, 2-3 subsections per section. Be specific and personalized."""
+}}"""
 
 
 def _flatten_outline(outline: BookOutline) -> list[SubSection]:
-    """Converts hierarchical outline into flat list of SubSection items for parallel writing."""
     sections: list[SubSection] = []
     for ch_idx, chapter in enumerate(outline["chapters"]):
         for s_idx, section in enumerate(chapter["sections"]):
@@ -86,16 +115,13 @@ def _flatten_outline(outline: BookOutline) -> list[SubSection]:
 
 
 def architect_node(state: GraphState) -> dict:
-    """Architect agent: generates or regenerates the book outline using an LLM.
-
-    Commits outline to state BEFORE the HITL interrupt node runs.
-    """
+    """Generates the personalized book outline. Commits to state before HITL pause."""
     from graph.llm import get_architect_llm
 
-    profile = state["user_profile"]
+    profile = sanitize_profile(dict(state["user_profile"]))
     feedback = state.get("user_feedback") or ""
     feedback_section = (
-        f"\nUser feedback on previous outline:\n{feedback}\nPlease revise accordingly."
+        f"\n**User feedback on previous outline — revise accordingly:**\n{feedback}"
         if feedback else ""
     )
 
@@ -103,10 +129,15 @@ def architect_node(state: GraphState) -> dict:
         age=profile["age"],
         sex=profile["sex"],
         location=profile["location"],
-        health_issues=", ".join(profile["health_issues"]),
-        lifestyle=profile["lifestyle"],
+        sleep_hours=profile.get("sleep_hours", "?"),
+        exercise_frequency=profile.get("exercise_frequency", "no especificado"),
+        diet_type=profile.get("diet_type", "no especificado"),
+        stress_level=profile.get("stress_level", "no especificado"),
+        energy_level=profile.get("energy_level", "no especificado"),
+        health_issues=", ".join(profile["health_issues"]) or "ninguno",
         goals=", ".join(profile["goals"]),
-        other_info=profile["other_info"],
+        lifestyle=profile["lifestyle"],
+        other_info=profile["other_info"] or "ninguna",
         feedback_section=feedback_section,
     )
 
@@ -121,7 +152,6 @@ def architect_node(state: GraphState) -> dict:
     outline: BookOutline = json.loads(raw)
     sections_to_write = _flatten_outline(outline)
 
-    # Commit outline and sections to state — HITL interrupt happens in the next node
     return {
         "book_outline": outline,
         "sections_to_write": sections_to_write,
@@ -131,18 +161,11 @@ def architect_node(state: GraphState) -> dict:
 
 
 def hitl_node(state: GraphState) -> dict:
-    """Human-in-the-loop node: pauses execution for user outline review.
-
-    The interrupt value is delivered to the frontend. When the user approves or
-    provides feedback, the graph resumes here via Command(resume={...}).
-    """
-    outline = state["book_outline"]
-    sections_count = len(state["sections_to_write"])
-
+    """Pauses for user outline review. Resumes via Command(resume={approved, feedback})."""
     user_decision = interrupt({
         "type": "outline_review",
-        "outline": outline,
-        "sections_count": sections_count,
+        "outline": state["book_outline"],
+        "sections_count": len(state["sections_to_write"]),
     })
 
     approved = user_decision.get("approved", False) if isinstance(user_decision, dict) else False

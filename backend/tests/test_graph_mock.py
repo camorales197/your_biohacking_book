@@ -23,15 +23,22 @@ SAMPLE_PROFILE = UserProfile(
     lifestyle="Trabajo de oficina, sedentario, duerme 6 horas",
     goals=["más energía", "perder grasa"],
     other_info="",
+    sleep_hours=6.0,
+    exercise_frequency="1-2x/semana",
+    diet_type="omnívoro",
+    stress_level="moderado",
+    energy_level="bajo",
 )
 
 INITIAL_STATE = GraphState(
+    session_token="test-session-token",
     user_email="test@example.com",
     user_profile=SAMPLE_PROFILE,
     book_outline=None,
     sections_to_write=[],
     written_sections=[],
     final_book=None,
+    pdf_path=None,
     user_feedback=None,
     status="outlining",
     email_sent=False,

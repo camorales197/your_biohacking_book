@@ -11,10 +11,16 @@ class UserProfile(TypedDict):
     lifestyle: str
     goals: list[str]
     other_info: str
+    # Richer numeric/categorical inputs for better personalization
+    sleep_hours: float          # average hours per night
+    exercise_frequency: str     # "none" | "1-2x/semana" | "3-4x/semana" | "5+/semana"
+    diet_type: str              # "omnívoro" | "vegetariano" | "vegano" | "keto" | "mediterráneo" | "otro"
+    stress_level: str           # "bajo" | "moderado" | "alto" | "muy alto"
+    energy_level: str           # "bajo" | "moderado" | "alto"
 
 
 class SubSection(TypedDict):
-    id: str           # e.g. "ch1_s2_sub3"
+    id: str           # e.g. "ch01_s02_sub03"
     chapter: str
     chapter_index: int
     section: str
@@ -31,13 +37,14 @@ class BookOutline(TypedDict):
 
 
 class GraphState(TypedDict):
+    session_token: str
     user_email: str
     user_profile: UserProfile
     book_outline: Optional[BookOutline]
     sections_to_write: list[SubSection]
-    # Annotated reducer: parallel writer results get appended into this list
     written_sections: Annotated[list[SubSection], operator.add]
     final_book: Optional[str]
+    pdf_path: Optional[str]     # path to cached PDF on disk
     user_feedback: Optional[str]
     status: str  # "outlining" | "awaiting_approval" | "writing" | "done"
     email_sent: bool
@@ -47,3 +54,4 @@ class WriterInput(TypedDict):
     """State passed to each parallel writer node via Send()."""
     user_profile: UserProfile
     section: SubSection
+    book_outline: BookOutline   # full outline for context
