@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { CopilotKit } from "@copilotkit/react-core";
 import { CopilotSidebar } from "@copilotkit/react-ui";
 import "@copilotkit/react-ui/styles.css";
@@ -10,7 +10,7 @@ import OutlineReview from "@/components/OutlineReview";
 import GenerationProgress from "@/components/GenerationProgress";
 import BookDisplay from "@/components/BookDisplay";
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8000";
+const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:8000";
 
 type AppStep = "form" | "outline" | "writing" | "done" | "error";
 
@@ -21,10 +21,7 @@ interface StatusPayload {
     chapters: {
       title: string;
       level: number;
-      sections: {
-        title: string;
-        subsections: { title: string; focus: string }[];
-      }[];
+      sections: { title: string; subsections: { title: string; focus: string }[] }[];
     }[];
   };
   sections_count?: number;
@@ -32,48 +29,90 @@ interface StatusPayload {
   email_sent?: boolean;
 }
 
+interface SessionState {
+  threadId: string;
+  token: string;
+}
+
+// Thin authenticated fetch wrapper
+async function apiFetch(url: string, token: string, init?: RequestInit) {
+  return fetch(url, {
+    ...init,
+    headers: { "Content-Type": "application/json", "X-Session-Token": token, ...(init?.headers ?? {}) },
+  });
+}
+
 export default function Home() {
   const [step, setStep] = useState<AppStep>("form");
-  const [threadId, setThreadId] = useState<string | null>(null);
-  const [statusData, setStatusData] = useState<StatusPayload | null>(null);
+  const [session, setSession] = useState<SessionState | null>(null);
+  const [outline, setOutline] = useState<StatusPayload["outline"] | null>(null);
+  const [sectionsCount, setSectionsCount] = useState(0);
+  const [writtenCount, setWrittenCount] = useState(0);
   const [bookTitle, setBookTitle] = useState("");
   const [bookContent, setBookContent] = useState("");
-  const [bookEmailSent, setBookEmailSent] = useState(false);
+  const [emailSent, setEmailSent] = useState(false);
   const [userEmail, setUserEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const esRef = useRef<EventSource | null>(null);
 
-  // ── Polling ───────────────────────────────────────────────────────────────
-  const pollStatus = useCallback(async (tid: string) => {
-    const res = await fetch(`${BACKEND_URL}/api/status/${tid}`);
-    if (!res.ok) return;
-    const data: StatusPayload = await res.json();
-    setStatusData(data);
-    return data;
-  }, []);
+  // ── SSE for writing phase ─────────────────────────────────────────────────
+  const startSSE = useCallback((threadId: string, token: string) => {
+    esRef.current?.close();
+    const url = `${BACKEND}/api/stream/${threadId}?x_session_token=${token}`;
+    // Note: EventSource doesn't support custom headers, so token sent as query param
+    // The backend reads it from either header or query param
+    const es = new EventSource(url);
+    esRef.current = es;
 
-  useEffect(() => {
-    if (!threadId || step !== "writing") return;
-
-    const interval = setInterval(async () => {
-      const data = await pollStatus(threadId);
-      if (!data) return;
+    es.onmessage = async (e) => {
+      const data = JSON.parse(e.data);
+      setWrittenCount(data.written_count ?? 0);
+      setSectionsCount(data.total_count ?? 0);
 
       if (data.status === "done") {
-        clearInterval(interval);
-        const bookRes = await fetch(`${BACKEND_URL}/api/book/${threadId}`);
-        if (bookRes.ok) {
-          const book = await bookRes.json();
+        es.close();
+        const res = await apiFetch(`${BACKEND}/api/book/${threadId}`, token);
+        if (res.ok) {
+          const book = await res.json();
           setBookTitle(book.title);
           setBookContent(book.content);
-          setBookEmailSent(book.email_sent ?? false);
+          setEmailSent(book.email_sent ?? false);
           setStep("done");
         }
       }
-    }, 2000);
+    };
 
-    return () => clearInterval(interval);
-  }, [threadId, step, pollStatus]);
+    es.onerror = () => {
+      es.close();
+      setError("Se perdió la conexión con el servidor. Recarga la página para ver si el libro está listo.");
+    };
+  }, []);
+
+  useEffect(() => () => esRef.current?.close(), []);
+
+  // ── Polling for outline phase ────────────────────────────────────────────
+  const pollForOutline = useCallback(async (threadId: string, token: string) => {
+    let attempts = 0;
+    const interval = setInterval(async () => {
+      attempts++;
+      const res = await apiFetch(`${BACKEND}/api/status/${threadId}`, token);
+      if (!res.ok) return;
+      const data: StatusPayload = await res.json();
+      if (data.status === "awaiting_approval" && data.outline) {
+        clearInterval(interval);
+        setOutline(data.outline);
+        setSectionsCount(data.sections_count ?? 0);
+        setStep("outline");
+        setLoading(false);
+      }
+      if (attempts > 90) {
+        clearInterval(interval);
+        setError("Tiempo de espera agotado generando el esquema. Intenta de nuevo.");
+        setLoading(false);
+      }
+    }, 2000);
+  }, []);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
   const handleFormSubmit = async (data: UserFormData) => {
@@ -81,31 +120,15 @@ export default function Home() {
     setError(null);
     setUserEmail(data.email);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/generate`, {
+      const res = await fetch(`${BACKEND}/api/generate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
       if (!res.ok) throw new Error(`Error ${res.status}: ${await res.text()}`);
-      const { thread_id } = await res.json();
-      setThreadId(thread_id);
-
-      // Poll until architect finishes and interrupt pauses
-      let attempts = 0;
-      const waitForOutline = setInterval(async () => {
-        attempts++;
-        const d = await pollStatus(thread_id);
-        if (d?.status === "awaiting_approval" || d?.outline) {
-          clearInterval(waitForOutline);
-          setStep("outline");
-          setLoading(false);
-        }
-        if (attempts > 60) {
-          clearInterval(waitForOutline);
-          setError("Tiempo de espera agotado. Intenta de nuevo.");
-          setLoading(false);
-        }
-      }, 2000);
+      const { thread_id, session_token } = await res.json();
+      setSession({ threadId: thread_id, token: session_token });
+      pollForOutline(thread_id, session_token);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error desconocido");
       setLoading(false);
@@ -113,15 +136,16 @@ export default function Home() {
   };
 
   const handleApprove = async (feedback?: string) => {
-    if (!threadId) return;
+    if (!session) return;
     setLoading(true);
     try {
-      await fetch(`${BACKEND_URL}/api/approve/${threadId}`, {
+      const res = await apiFetch(`${BACKEND}/api/approve/${session.threadId}`, session.token, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ approved: true, feedback: feedback ?? "" }),
       });
+      if (!res.ok) throw new Error(await res.text());
       setStep("writing");
+      startSSE(session.threadId, session.token);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error al aprobar");
     } finally {
@@ -130,30 +154,14 @@ export default function Home() {
   };
 
   const handleRegenerate = async (feedback: string) => {
-    if (!threadId) return;
+    if (!session) return;
     setLoading(true);
     try {
-      await fetch(`${BACKEND_URL}/api/approve/${threadId}`, {
+      await apiFetch(`${BACKEND}/api/approve/${session.threadId}`, session.token, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ approved: false, feedback }),
       });
-
-      // Poll again until new outline arrives
-      let attempts = 0;
-      const waitForOutline = setInterval(async () => {
-        attempts++;
-        const d = await pollStatus(threadId);
-        if (d?.status === "awaiting_approval") {
-          clearInterval(waitForOutline);
-          setLoading(false);
-        }
-        if (attempts > 60) {
-          clearInterval(waitForOutline);
-          setError("Tiempo de espera agotado.");
-          setLoading(false);
-        }
-      }, 2000);
+      pollForOutline(session.threadId, session.token);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error al regenerar");
       setLoading(false);
@@ -161,14 +169,18 @@ export default function Home() {
   };
 
   const handleReset = () => {
+    esRef.current?.close();
     setStep("form");
-    setThreadId(null);
-    setStatusData(null);
+    setSession(null);
+    setOutline(null);
+    setSectionsCount(0);
+    setWrittenCount(0);
     setBookTitle("");
     setBookContent("");
-    setBookEmailSent(false);
+    setEmailSent(false);
     setUserEmail("");
     setError(null);
+    setLoading(false);
   };
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -177,22 +189,18 @@ export default function Home() {
       <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 font-sans">
         <div className="max-w-4xl mx-auto px-4 py-12">
           {error && (
-            <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-red-700 dark:text-red-300">
-              ⚠️ {error}
-              <button onClick={() => setError(null)} className="ml-4 underline text-sm">
-                Cerrar
-              </button>
+            <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-red-700 dark:text-red-300 flex items-start justify-between gap-4">
+              <span>⚠️ {error}</span>
+              <button onClick={() => setError(null)} className="underline text-sm shrink-0">Cerrar</button>
             </div>
           )}
 
-          {step === "form" && (
-            <UserInputForm onSubmit={handleFormSubmit} loading={loading} />
-          )}
+          {step === "form" && <UserInputForm onSubmit={handleFormSubmit} loading={loading} />}
 
-          {step === "outline" && statusData?.outline && (
+          {step === "outline" && outline && (
             <OutlineReview
-              outline={statusData.outline}
-              sectionsCount={statusData.sections_count ?? 0}
+              outline={outline}
+              sectionsCount={sectionsCount}
               onApprove={handleApprove}
               onRegenerate={handleRegenerate}
               loading={loading}
@@ -200,18 +208,16 @@ export default function Home() {
           )}
 
           {step === "writing" && (
-            <GenerationProgress
-              writtenCount={statusData?.written_count ?? 0}
-              totalCount={statusData?.sections_count ?? 0}
-            />
+            <GenerationProgress writtenCount={writtenCount} totalCount={sectionsCount} />
           )}
 
-          {step === "done" && (
+          {step === "done" && session && (
             <BookDisplay
-              threadId={threadId!}
+              threadId={session.threadId}
+              sessionToken={session.token}
               title={bookTitle}
               content={bookContent}
-              emailSent={bookEmailSent}
+              emailSent={emailSent}
               userEmail={userEmail}
               onReset={handleReset}
             />
@@ -223,7 +229,7 @@ export default function Home() {
         defaultOpen={false}
         labels={{
           title: "Asistente de Biohacking",
-          initial: "¡Hola! Soy tu asistente de biohacking. Puedo ayudarte a entender los conceptos de tu libro o responder preguntas sobre biohacking.",
+          initial: "¡Hola! Puedo ayudarte a entender los conceptos del libro o responder preguntas sobre biohacking.",
         }}
       />
     </CopilotKit>

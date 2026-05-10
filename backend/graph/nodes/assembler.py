@@ -1,8 +1,13 @@
+import logging
+import os
+
 from graph.state import GraphState, SubSection
+
+logger = logging.getLogger(__name__)
 
 
 def assembler_node(state: GraphState) -> dict:
-    """Assembles written sections into Markdown, generates PDF, and emails the book."""
+    """Assembles written sections into Markdown, generates PDF (cached to disk), and emails the book."""
     written: list[SubSection] = state["written_sections"]
     outline = state["book_outline"]
 
@@ -37,22 +42,35 @@ def assembler_node(state: GraphState) -> dict:
 
     final_book = "\n".join(lines)
 
-    # Generate PDF and send email (both non-fatal on failure)
+    # Generate PDF and cache to disk
+    pdf_path: str | None = None
+    thread_id = state.get("session_token", "unknown")
+
+    try:
+        from graph.pdf import markdown_to_pdf
+        pdf_bytes = markdown_to_pdf(final_book, outline["title"])
+        pdf_dir = os.getenv("PDF_DIR", "./pdfs")
+        os.makedirs(pdf_dir, exist_ok=True)
+        pdf_path = os.path.join(pdf_dir, f"{thread_id}.pdf")
+        with open(pdf_path, "wb") as f:
+            f.write(pdf_bytes)
+    except Exception:
+        logger.exception("PDF generation failed — book still available as Markdown")
+        pdf_bytes = None
+
+    # Send email (non-fatal)
     email_sent = False
     user_email = state.get("user_email", "")
-
-    if user_email:
-        from graph.pdf import markdown_to_pdf
-        from graph.mailer import send_book_email
+    if user_email and pdf_bytes is not None:
         try:
-            pdf_bytes = markdown_to_pdf(final_book, outline["title"])
+            from graph.mailer import send_book_email
             email_sent = send_book_email(user_email, outline["title"], final_book, pdf_bytes)
-        except Exception as exc:
-            import logging
-            logging.getLogger(__name__).exception("PDF/email step failed: %s", exc)
+        except Exception:
+            logger.exception("Email delivery failed")
 
     return {
         "final_book": final_book,
+        "pdf_path": pdf_path,
         "status": "done",
         "email_sent": email_sent,
     }

@@ -6,6 +6,7 @@ const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:800
 
 interface Props {
   threadId: string;
+  sessionToken: string;
   title: string;
   content: string;
   emailSent: boolean;
@@ -15,6 +16,7 @@ interface Props {
 
 export default function BookDisplay({
   threadId,
+  sessionToken,
   title,
   content,
   emailSent,
@@ -32,7 +34,11 @@ export default function BookDisplay({
   };
 
   const handleDownloadPdf = () => {
-    window.open(`${BACKEND_URL}/api/book/${threadId}/pdf`, "_blank");
+    // Pass token as query param since window.open can't set custom headers
+    window.open(
+      `${BACKEND_URL}/api/book/${threadId}/pdf?x_session_token=${encodeURIComponent(sessionToken)}`,
+      "_blank"
+    );
   };
 
   return (

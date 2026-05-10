@@ -1,37 +1,40 @@
 from langgraph.graph import StateGraph, START, END
-from langgraph.types import Send
+from langgraph.types import Send, RetryPolicy
 
 from graph.state import GraphState, WriterInput
 from graph.nodes.architect import architect_node, hitl_node
 from graph.nodes.writer import writer_node
 from graph.nodes.assembler import assembler_node
 
+# Retry up to 3 times with exponential backoff for transient LLM API errors
+_WRITER_RETRY = RetryPolicy(max_attempts=3, backoff_factor=2.0)
+_ARCHITECT_RETRY = RetryPolicy(max_attempts=2, backoff_factor=2.0)
+
 
 def route_after_hitl(state: GraphState) -> str:
-    """After HITL node: if user provided feedback → regenerate; if approved → write."""
     if state.get("user_feedback") and state.get("status") != "writing":
         return "architect_node"
     return "route_writers"
 
 
 def route_to_writers(state: GraphState) -> list[Send]:
-    """Fan-out: dispatches one Send per section to writer_node (parallel execution)."""
+    """Fan-out: one Send per subsection → parallel execution."""
     return [
         Send("writer_node", WriterInput(
             user_profile=state["user_profile"],
             section=section,
+            book_outline=state["book_outline"],
         ))
         for section in state["sections_to_write"]
     ]
 
 
 def build_graph(checkpointer=None):
-    """Builds and compiles the biohacking book generation graph."""
     builder = StateGraph(GraphState)
 
-    builder.add_node("architect_node", architect_node)
+    builder.add_node("architect_node", architect_node, retry_policy=_ARCHITECT_RETRY)
     builder.add_node("hitl_node", hitl_node)
-    builder.add_node("writer_node", writer_node)
+    builder.add_node("writer_node", writer_node, retry_policy=_WRITER_RETRY)
     builder.add_node("assembler_node", assembler_node)
 
     builder.add_edge(START, "architect_node")
@@ -43,7 +46,6 @@ def build_graph(checkpointer=None):
         {"architect_node": "architect_node", "route_writers": "route_writers"},
     )
 
-    # Fan-out node: routes to parallel writers via Send()
     builder.add_node("route_writers", lambda s: {})
     builder.add_conditional_edges("route_writers", route_to_writers, ["writer_node"])
 
